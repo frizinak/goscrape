@@ -21,6 +21,7 @@ func init() {
 
 type Result struct {
 	Err      error
+	Origin   *url.URL
 	URL      *url.URL
 	Head     time.Duration
 	Duration time.Duration
@@ -66,6 +67,16 @@ func (r *Result) GetString(key string, fallback fmt.Stringer) fmt.Stringer {
 		return r.URL
 	case "path":
 		return output.NewString(r.URL.Path)
+	case "origin":
+		if r.Origin == nil {
+			return fallback
+		}
+		return r.Origin
+	case "originpath":
+		if r.Origin == nil {
+			return fallback
+		}
+		return output.NewString(r.Origin.Path)
 	case "query":
 		if q := r.URL.Query().Encode(); q != "" {
 			return output.NewString(q)
@@ -92,8 +103,8 @@ func New(timeout time.Duration) *Fetcher {
 	}
 }
 
-func (f *Fetcher) Fetch(u *url.URL) *Result {
-	r := &Result{URL: u}
+func (f *Fetcher) Fetch(u *url.URL, origin *url.URL) *Result {
+	r := &Result{URL: u, Origin: origin}
 	req, err := http.NewRequest("GET", u.String(), nil)
 	if err != nil {
 		r.Err = err

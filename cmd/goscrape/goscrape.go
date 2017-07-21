@@ -29,6 +29,11 @@ type stats struct {
 	statusCodes map[int]int
 }
 
+type task struct {
+	from *url.URL
+	to   *url.URL
+}
+
 func calcStats(s *stats, timings []time.Duration) {
 	if len(timings) == 0 {
 		return
@@ -61,7 +66,7 @@ func calcStats(s *stats, timings []time.Duration) {
 
 func handleWork(
 	f *fetcher.Fetcher,
-	work <-chan *url.URL,
+	work <-chan *task,
 	results chan<- *fetcher.Result,
 	timeout time.Duration,
 ) {
@@ -75,7 +80,7 @@ func handleWork(
 				return
 			}
 
-			r := f.Fetch(u)
+			r := f.Fetch(u.to, u.from)
 			rwg.Add(1)
 			go func() { results <- r; rwg.Done() }()
 		case <-time.After(timeout):
@@ -89,7 +94,7 @@ func handleResults(
 	stderr io.Writer,
 	stdout output.Output,
 	results <-chan *fetcher.Result,
-	work chan<- *url.URL,
+	work chan<- *task,
 	fetched map[string]bool,
 	max *int,
 ) (s *stats) {
@@ -128,7 +133,7 @@ func handleResults(
 			}
 
 			fetched[str] = true
-			work <- u
+			work <- &task{r.URL, u}
 			if *max > 0 && len(fetched) >= *max {
 				canceled = true
 				close(work)
@@ -166,16 +171,18 @@ func main() {
 		"status,duration,path,query",
 		`Comma separated list of fields.
 		Available fields:
-			url:       the request url
-			path:      the request path
-			query:     the request query params
-			nurls:     amount of scrapable urls on the page
-			status:    the http status code
-			head:      the amount of time it took until headers were received
-			duration:  the total amount of time it took until we received the entire response
-			header.*:  replace * with the header to include in the output
-			meta.*:    replace * with the meta property to include in the output
-			query.*:   replace * with the query param to include in the output
+			url:        the request url
+			path:       the request path
+			query:      the request query params
+			nurls:      amount of scrapable urls on the page
+			origin:     the origin url
+			originpath: the origin path
+			status:     the http status code
+			head:       the amount of time it took until headers were received
+			duration:   the total amount of time it took until we received the entire response
+			header.*:   replace * with the header to include in the output
+			meta.*:     replace * with the meta property to include in the output
+			query.*:    replace * with the query param to include in the output
 			`,
 	)
 
@@ -237,7 +244,7 @@ func main() {
 
 	//stop := false
 	workers := *concurrency
-	work := make(chan *url.URL, workers)
+	work := make(chan *task, workers)
 	results := make(chan *fetcher.Result, 100*workers)
 	var wg sync.WaitGroup
 
@@ -258,7 +265,7 @@ func main() {
 	}()
 
 	for _, u := range baseUrls {
-		work <- u
+		work <- &task{nil, u}
 	}
 
 	go func() {
