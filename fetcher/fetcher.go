@@ -136,6 +136,14 @@ func extract(
 		return nil, nil, err
 	}
 
+	if strings.HasSuffix(baseURL.Path, ".xml") {
+		locs := doc.Find("urlset>url>loc")
+		if locs.Length() != 0 {
+			urls := extractSitemap(baseURL, locs)
+			return map[string]string{}, urls, nil
+		}
+	}
+
 	s := doc.Find("a[href]")
 	m := doc.Find("head meta")
 	urls := make([]*url.URL, 0, s.Length())
@@ -147,39 +155,9 @@ func extract(
 			return
 		}
 
-		switch {
-		case u == "" || strings.HasPrefix(u, "#"):
-			return
-		case strings.HasPrefix(u, "http:") || strings.HasPrefix(u, "https:"):
-			break
-		case specialHrefRE.MatchString(u):
-			return
-		case !strings.HasPrefix(u, "/"):
-			u = baseURL.String() + "/" + u
-		case strings.HasPrefix(u, "//"):
-			u = baseURL.Scheme + ":" + u
+		if p := normalize(baseURL, u); p != nil {
+			urls = append(urls, p)
 		}
-
-		p, err := url.Parse(u)
-		if err != nil {
-			return
-		}
-
-		if p.Host == "" {
-			p.Host = baseURL.Host
-		}
-
-		if p.Host != baseURL.Host {
-			return
-		}
-
-		p.Fragment = ""
-		p.Scheme = baseURL.Scheme
-		if baseURL.User != nil {
-			p.User = baseURL.User
-		}
-
-		urls = append(urls, p)
 	})
 
 	m.Each(func(i int, s *goquery.Selection) {
@@ -196,4 +174,53 @@ func extract(
 	})
 
 	return meta, urls, nil
+}
+
+func extractSitemap(baseURL *url.URL, s *goquery.Selection) []*url.URL {
+	urls := make([]*url.URL, 0, s.Length())
+	s.Each(func(i int, s *goquery.Selection) {
+		u := s.Text()
+		if p := normalize(baseURL, u); p != nil {
+			urls = append(urls, p)
+		}
+	})
+
+	return urls
+}
+
+func normalize(baseURL *url.URL, u string) *url.URL {
+
+	switch {
+	case u == "" || strings.HasPrefix(u, "#"):
+		return nil
+	case strings.HasPrefix(u, "http:") || strings.HasPrefix(u, "https:"):
+		break
+	case specialHrefRE.MatchString(u):
+		return nil
+	case !strings.HasPrefix(u, "/"):
+		u = baseURL.String() + "/" + u
+	case strings.HasPrefix(u, "//"):
+		u = baseURL.Scheme + ":" + u
+	}
+
+	p, err := url.Parse(u)
+	if err != nil {
+		return nil
+	}
+
+	if p.Host == "" {
+		p.Host = baseURL.Host
+	}
+
+	if p.Host != baseURL.Host {
+		return nil
+	}
+
+	p.Fragment = ""
+	p.Scheme = baseURL.Scheme
+	if baseURL.User != nil {
+		p.User = baseURL.User
+	}
+
+	return p
 }
