@@ -271,7 +271,7 @@ func main() {
 		stderr,
 		`
 Success:  %d
-Errors:   %d,
+Errors:   %d
 
 Fastest:  %s
 Slowest:  %s
