@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,6 +34,17 @@ type task struct {
 	from *url.URL
 	to   *url.URL
 }
+
+type statusCode struct {
+	code   int
+	amount int
+}
+
+type statusCodes []statusCode
+
+func (s statusCodes) Len() int           { return len(s) }
+func (s statusCodes) Less(i, j int) bool { return s[i].code < s[j].code }
+func (s statusCodes) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 func calcStats(s *stats, timings []time.Duration) {
 	if len(timings) == 0 {
@@ -296,7 +308,13 @@ StatusCodes:
 		stats.average,
 	)
 
+	codes := make(statusCodes, 0, len(stats.statusCodes))
 	for i := range stats.statusCodes {
-		fmt.Fprintf(stderr, "\t%03d: %-5d\n", i, stats.statusCodes[i])
+		codes = append(codes, statusCode{i, stats.statusCodes[i]})
+	}
+	sort.Sort(codes)
+
+	for _, c := range codes {
+		fmt.Fprintf(stderr, "\t%03d: %-5d\n", c.code, c.amount)
 	}
 }
