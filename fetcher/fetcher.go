@@ -90,9 +90,10 @@ func (r *Result) GetString(key string, fallback fmt.Stringer) fmt.Stringer {
 
 type Fetcher struct {
 	client http.Client
+	ua     string
 }
 
-func New(timeout time.Duration) *Fetcher {
+func New(timeout time.Duration, ua string) *Fetcher {
 	return &Fetcher{
 		http.Client{
 			Timeout: timeout,
@@ -100,6 +101,7 @@ func New(timeout time.Duration) *Fetcher {
 				return http.ErrUseLastResponse
 			},
 		},
+		ua,
 	}
 }
 
@@ -109,6 +111,10 @@ func (f *Fetcher) Fetch(u *url.URL, origin *url.URL) *Result {
 	if err != nil {
 		r.Err = err
 		return r
+	}
+
+	if f.ua != "" {
+		req.Header.Set("User-Agent", f.ua)
 	}
 
 	start := time.Now()
