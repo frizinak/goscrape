@@ -163,7 +163,7 @@ func extract(
 
 	s := doc.Find("a[href]")
 	m := doc.Find("head meta")
-	urls := make([]*url.URL, 0, s.Length())
+	urls := make(map[string]*url.URL, s.Length())
 	meta := make(map[string]string, m.Length())
 
 	s.Each(func(i int, s *goquery.Selection) {
@@ -173,7 +173,7 @@ func extract(
 		}
 
 		if p := normalize(baseURL, u); p != nil {
-			urls = append(urls, p)
+			urls[p.String()] = p
 		}
 	})
 
@@ -190,7 +190,12 @@ func extract(
 		meta[key] = val
 	})
 
-	return meta, urls, nil
+	urlsSlice := make([]*url.URL, 0, len(urls))
+	for _, u := range urls {
+		urlsSlice = append(urlsSlice, u)
+	}
+
+	return meta, urlsSlice, nil
 }
 
 func extractSitemap(baseURL *url.URL, s *goquery.Selection) []*url.URL {
