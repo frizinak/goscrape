@@ -19,6 +19,12 @@ func init() {
 	specialHrefRE = regexp.MustCompile("^[a-zA-Z]+:")
 }
 
+type Filter func(baseURL, u *url.URL) bool
+
+func FilterSameHost(baseURL, u *url.URL) bool {
+	return u.Host == baseURL.Host
+}
+
 type Result struct {
 	Err      error
 	Origin   *url.URL
@@ -91,9 +97,10 @@ func (r *Result) GetString(key string, fallback fmt.Stringer) fmt.Stringer {
 type Fetcher struct {
 	client http.Client
 	ua     string
+	filter Filter
 }
 
-func New(timeout time.Duration, ua string) *Fetcher {
+func New(timeout time.Duration, ua string, filter Filter) *Fetcher {
 	return &Fetcher{
 		http.Client{
 			Timeout: timeout,
@@ -102,6 +109,7 @@ func New(timeout time.Duration, ua string) *Fetcher {
 			},
 		},
 		ua,
+		filter,
 	}
 }
 
@@ -131,7 +139,7 @@ func (f *Fetcher) Fetch(u *url.URL, origin *url.URL) *Result {
 	r.Head = time.Now().Sub(start)
 	r.Headers = res.Header
 	r.Status = res.StatusCode
-	meta, urls, err := extract(u, res.Body)
+	meta, urls, err := extract(u, res.Body, f.filter)
 	if err != nil {
 		r.Err = err
 		return r
@@ -147,6 +155,7 @@ func (f *Fetcher) Fetch(u *url.URL, origin *url.URL) *Result {
 func extract(
 	baseURL *url.URL,
 	body io.Reader,
+	filter Filter,
 ) (map[string]string, []*url.URL, error) {
 	doc, err := goquery.NewDocumentFromReader(body)
 	if err != nil {
@@ -156,7 +165,7 @@ func extract(
 	if strings.HasSuffix(baseURL.Path, ".xml") {
 		locs := doc.Find("urlset>url>loc")
 		if locs.Length() != 0 {
-			urls := extractSitemap(baseURL, locs)
+			urls := extractSitemap(baseURL, locs, filter)
 			return map[string]string{}, urls, nil
 		}
 	}
@@ -172,7 +181,7 @@ func extract(
 			return
 		}
 
-		if p := normalize(baseURL, u); p != nil {
+		if p := normalize(baseURL, u, filter); p != nil {
 			urls[p.String()] = p
 		}
 	})
@@ -198,11 +207,15 @@ func extract(
 	return meta, urlsSlice, nil
 }
 
-func extractSitemap(baseURL *url.URL, s *goquery.Selection) []*url.URL {
+func extractSitemap(
+	baseURL *url.URL,
+	s *goquery.Selection,
+	filter Filter,
+) []*url.URL {
 	urls := make([]*url.URL, 0, s.Length())
 	s.Each(func(i int, s *goquery.Selection) {
 		u := s.Text()
-		if p := normalize(baseURL, u); p != nil {
+		if p := normalize(baseURL, u, filter); p != nil {
 			urls = append(urls, p)
 		}
 	})
@@ -210,7 +223,7 @@ func extractSitemap(baseURL *url.URL, s *goquery.Selection) []*url.URL {
 	return urls
 }
 
-func normalize(baseURL *url.URL, u string) *url.URL {
+func normalize(baseURL *url.URL, u string, filter Filter) *url.URL {
 
 	switch {
 	case u == "" || strings.HasPrefix(u, "#"):
@@ -234,14 +247,17 @@ func normalize(baseURL *url.URL, u string) *url.URL {
 		p.Host = baseURL.Host
 	}
 
-	if p.Host != baseURL.Host {
-		return nil
+	p.Fragment = ""
+	if p.Scheme == "" {
+		p.Scheme = baseURL.Scheme
 	}
 
-	p.Fragment = ""
-	p.Scheme = baseURL.Scheme
-	if baseURL.User != nil {
+	if baseURL.User != nil && baseURL.Host == p.Host {
 		p.User = baseURL.User
+	}
+
+	if !filter(baseURL, p) {
+		return nil
 	}
 
 	return p

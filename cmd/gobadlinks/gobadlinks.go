@@ -54,7 +54,7 @@ func main() {
 		fetched[cli.URLs[i].String()] = true
 	}
 
-	f := fetcher.New(cli.Timeout, "")
+	f := fetcher.New(cli.Timeout, "", fetcher.FilterSameHost)
 	workers := cli.Concurrency
 	work := make(chan *task, workers)
 	results := make(chan *fetcher.Result, 100*workers)
